@@ -1,0 +1,407 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TripStatus {
+  DRAFT
+  PLANNED
+  BOOKED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
+enum TripVisibility {
+  PRIVATE
+  SHARED
+}
+
+enum CollaboratorRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+enum ActivityType {
+  SIGHTSEEING
+  FOOD
+  ADVENTURE
+  CULTURE
+  SHOPPING
+  TRANSPORT
+  RELAXATION
+  OTHER
+}
+
+enum BookingType {
+  FLIGHT
+  TRAIN
+  BUS
+  CAR_RENTAL
+  HOTEL
+  ACTIVITY
+  OTHER
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELED
+  REFUNDED
+}
+
+enum CurrencyCode {
+  USD
+  EUR
+  GBP
+  INR
+  AED
+  SGD
+  AUD
+  CAD
+  JPY
+}
+
+enum BudgetCategory {
+  TRANSPORT
+  STAY
+  FOOD
+  ACTIVITIES
+  SHOPPING
+  MISC
+}
+
+enum SubscriptionStatus {
+  INACTIVE
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+enum AnalyticsEventType {
+  SIGNUP
+  TRIP_CREATED
+  TRIP_UPDATED
+  ITINERARY_GENERATED
+  CHECKOUT_STARTED
+  SUBSCRIPTION_UPDATED
+}
+
+model User {
+  id                           String             @id @default(cuid())
+  clerkUserId                  String             @unique
+  email                        String?
+  name                         String?
+  imageUrl                     String?
+  isAdmin                      Boolean            @default(false)
+  stripeCustomerId             String?
+  subscriptionStatus           SubscriptionStatus @default(INACTIVE)
+  subscriptionPriceId          String?
+  subscriptionCurrentPeriodEnd DateTime?
+
+  trips           Trip[]           @relation("TripOwner")
+  collaborations  Collaborator[]
+  savedPlaces     SavedPlace[]
+  notifications   Notification[]
+  analyticsEvents AnalyticsEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([stripeCustomerId])
+  @@index([subscriptionStatus])
+}
+
+model Trip {
+  id      String @id @default(cuid())
+  ownerId String
+  owner   User   @relation("TripOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  title          String
+  description    String?
+  coverImageUrl  String?
+  travelersCount Int            @default(1)
+  status         TripStatus     @default(DRAFT)
+  visibility     TripVisibility @default(PRIVATE)
+
+  startDate DateTime?
+  endDate   DateTime?
+  timezone  String? // e.g. "Asia/Kolkata"
+
+  primaryDestinationId String?
+  primaryDestination   Destination? @relation("TripPrimaryDestination", fields: [primaryDestinationId], references: [id], onDelete: SetNull)
+
+  destinations  Destination[]  @relation("TripDestinations")
+  days          ItineraryDay[]
+  hotels        Hotel[]
+  activities    Activity[]
+  bookings      Booking[]
+  budgets       Budget[]
+  collaborators Collaborator[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId, updatedAt(sort: Desc)])
+  @@index([status, startDate])
+  @@index([primaryDestinationId])
+}
+
+model Collaborator {
+  id     String           @id @default(cuid())
+  tripId String
+  userId String
+  role   CollaboratorRole @default(VIEWER)
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tripId, userId])
+  @@index([userId])
+  @@index([tripId, role])
+}
+
+model Destination {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation("TripDestinations", fields: [tripId], references: [id], onDelete: Cascade)
+
+  primaryForTrips Trip[] @relation("TripPrimaryDestination")
+
+  name    String
+  country String?
+  region  String?
+  city    String?
+
+  // Optional geo
+  latitude  Float?
+  longitude Float?
+
+  // External place references
+  placeId String?
+  source  String? // e.g. "google_places"
+
+  days       ItineraryDay[]
+  activities Activity[]
+  hotels     Hotel[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId])
+  @@index([tripId, city])
+  @@index([placeId])
+}
+
+model ItineraryDay {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  destinationId String?
+  destination   Destination? @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+
+  dayNumber Int
+  date      DateTime? // Store as date-only in app; Prisma uses DateTime
+  title     String?
+  notes     String?
+
+  activities Activity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tripId, dayNumber])
+  @@index([tripId, date])
+  @@index([destinationId])
+}
+
+model Activity {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  dayId String?
+  day   ItineraryDay? @relation(fields: [dayId], references: [id], onDelete: Cascade)
+
+  destinationId String?
+  destination   Destination? @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+
+  type        ActivityType @default(OTHER)
+  title       String
+  description String?
+
+  startTime DateTime?
+  endTime   DateTime?
+  order     Int       @default(0) // UI ordering within a day
+
+  cost     Decimal?      @db.Decimal(12, 2)
+  currency CurrencyCode?
+
+  // External place references
+  placeId   String?
+  source    String?
+  address   String?
+  latitude  Float?
+  longitude Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId, dayId, order])
+  @@index([tripId, startTime])
+  @@index([destinationId])
+  @@index([placeId])
+}
+
+model Hotel {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  destinationId String?
+  destination   Destination? @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+
+  name     String
+  address  String?
+  checkIn  DateTime?
+  checkOut DateTime?
+
+  // External refs
+  placeId   String?
+  source    String?
+  latitude  Float?
+  longitude Float?
+
+  bookings Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId, checkIn])
+  @@index([destinationId])
+  @@index([placeId])
+}
+
+model Booking {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  type   BookingType
+  status BookingStatus @default(PENDING)
+
+  // Optional association (useful for hotel bookings)
+  hotelId String?
+  hotel   Hotel?  @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+
+  provider  String? // e.g. "MakeMyTrip", "Booking.com"
+  reference String? // booking ref / PNR
+
+  startsAt DateTime?
+  endsAt   DateTime?
+
+  amount   Decimal?      @db.Decimal(12, 2)
+  currency CurrencyCode?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId, type, status])
+  @@index([hotelId])
+  @@index([startsAt])
+}
+
+model Budget {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  category BudgetCategory
+  amount   Decimal        @db.Decimal(12, 2)
+  currency CurrencyCode   @default(USD)
+
+  // Optional: planned vs actual tracking
+  planned Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId, category])
+  @@index([tripId, planned])
+}
+
+model SavedPlace {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name     String
+  category String? // free-form; could be normalized later
+
+  placeId   String?
+  source    String?
+  address   String?
+  latitude  Float?
+  longitude Float?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, updatedAt(sort: Desc)])
+  @@index([placeId])
+}
+
+model Notification {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title    String
+  message  String
+  type     NotificationType @default(INFO)
+  readAt   DateTime?
+  metadata Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, readAt])
+}
+
+model AnalyticsEvent {
+  id        String             @id @default(cuid())
+  userId    String?
+  user      User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  eventType AnalyticsEventType
+  source    String?
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([eventType, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+}
