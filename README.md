@@ -1,2 +1,68 @@
-# Ai-Travel-Planner
-Travel Planner Using AI
+# Next.js 15 SaaS Starter (Enterprise-ready)
+
+## Tech
+
+- Next.js 15 (App Router) + TypeScript
+- Tailwind CSS + shadcn/ui
+- Clerk authentication
+- Prisma + PostgreSQL
+- React Query + Zustand
+- Framer Motion
+
+## Getting started
+
+1) Install deps:
+
+```bash
+npm i
+```
+
+2) Create `.env.local` from `.env.example` and fill values:
+
+- `DATABASE_URL`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `CLERK_SECRET_KEY`
+- Optional: `CLERK_WEBHOOK_SECRET`
+
+3) Generate Prisma client:
+
+```bash
+npm run prisma:generate
+```
+
+4) Run dev:
+
+```bash
+npm run dev
+```
+
+## Routing
+
+- `/` public marketing page
+- `/sign-in/*` Clerk sign-in
+- `/sign-up/*` Clerk sign-up
+- `/dashboard` protected app route (via `middleware.ts`)
+
+## Folder structure (scalable)
+
+- `app/`: App Router routes
+  - `app/(auth)/*`: auth routes
+  - `app/(app)/*`: authenticated app routes
+  - `app/api/*`: route handlers (API)
+- `components/`: shared UI + layout + providers
+  - `components/ui/`: shadcn/ui primitives
+  - `components/layout/`: shell, nav, layout primitives
+  - `components/providers/`: React Query + Theme providers
+- `modules/`: clean architecture feature modules
+  - `domain/`: business types/rules (no framework)
+  - `application/`: use-cases
+  - `infrastructure/`: Prisma/3rd-party adapters
+  - `ui/`: feature UI
+- `lib/`: cross-cutting utilities
+  - `lib/db.ts`: Prisma client singleton
+  - `lib/env.ts`: validated `NEXT_PUBLIC_*` env
+  - `lib/env.server.ts`: validated server env (lazy)
+  - `lib/api/*`: typed fetch wrapper for React Query
+- `stores/`: Zustand stores
+- `prisma/`: Prisma schema
+
